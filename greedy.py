@@ -1,6 +1,61 @@
 import heapq
-
+import time
+import random
+import matplotlib.pyplot as plt
+import math
+import heapdict
 from parsing import parse_raw_data
+
+def measure_runtime(kanji_dict, trials=5):
+    sizes = [100, 300, 600, 1000, 1500, len(kanji_dict)]
+    results = []
+
+    all_kanji = list(kanji_dict.keys())
+
+    for n in sizes:
+        if n > len(kanji_dict):
+            break
+        subset_keys = set(random.sample(all_kanji, n))
+        subgraph = {k: v for k, v in kanji_dict.items() if k in subset_keys}
+        
+        source = random.choice(list(subgraph.keys()))
+
+        total_time = 0.0
+        for _ in range(trials):
+            start = time.perf_counter()
+            dijkstras(source, subgraph)
+            end = time.perf_counter()
+            total_time += (end - start)
+        
+        avg_time = total_time / trials
+        results.append((n, avg_time))
+        print(f"{n:5d} vertices → {avg_time:.6f} seconds (avg over {trials} runs)")
+
+    print("\n=== Runtime Summary ===")
+    for n, t in results:
+        print(f"{n:5d} vertices | {t:.6f} s")
+    
+    return results
+
+def plot_runtime(results):
+    vertices = [r[0] for r in results]
+    runtimes = [r[1] for r in results]
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(vertices, runtimes, 'o-', label="Measured Runtime", linewidth=2)
+
+    # should be O(V log V) for reference (scaled for visual comparison)
+    scale = runtimes[0] / (vertices[0] * math.log(vertices[0]))
+    theoretical = [scale * v * math.log(v) for v in vertices]
+    plt.plot(vertices, theoretical, '--', label="O(V log V) (scaled)", color='gray')
+
+    plt.title("Dijkstra Runtime Complexity (Empirical vs Theoretical)")
+    plt.xlabel("Number of Vertices (V)")
+    plt.ylabel("Average Runtime (seconds)")
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 def dijkstras(source_kanji: str, kanji_dict: dict):
     if source_kanji not in kanji_dict:
@@ -12,25 +67,29 @@ def dijkstras(source_kanji: str, kanji_dict: dict):
     #create a null set of predecessors for each node 
     predecessors = {}
     #create empty priority queue pq
-    pq = []
+    pq = heapdict.heapdict()
     for kanji in kanji_dict:
         if kanji == source_kanji:
             distances[kanji] = 0
+            pq[kanji]=0
         else: 
             distances[kanji] = float('inf')
+            pq[kanji] = float('inf')
         predecessors[kanji] = None
         #for each vertice in vertices, insert (v, dist(v)) (infinity for now)
-        heapq.heappush(pq, (distances[kanji], kanji))
+        
     
 
     # while pq is not empty
     while pq:
         #get the vertex (u) with the shortest distance to source(first iteration is the source)
-        current_dist, u = heapq.heappop(pq)
+        current_dist, u = pq.popitem()
         #since we might come accros repeated vertices in the pq, check the updated distance 
-        if current_dist > distances[u]:
-            continue 
+
+        
         kanji_obj = kanji_dict.get(u)
+        if not kanji_obj:
+            continue
         #for each edge (u,v) starting from u 
         for v, edge_weight in kanji_obj.composed:
             if v not in kanji_dict:
@@ -39,8 +98,9 @@ def dijkstras(source_kanji: str, kanji_dict: dict):
             if new_dist<distances[v]:
                 #insert new dist(v) in the priority queue (no updating/replacing in python)
                 distances[v] = new_dist
+                pq[v] = new_dist
                 predecessors[v] = u
-                heapq.heappush(pq, (new_dist, v))
+                
     return distances, predecessors
 
 def reconstruct_path(target_kanji: str, predecessors: dict):
@@ -73,15 +133,12 @@ def find_learning_path(source_kanji: str, target_kanji: str, kanji_dict: dict):
     
     return path, total_difficulty
 def find_example_paths(kanji_dict):
-    """Find 4-5 example learning paths"""
-    
-    # Example pairs: (source, target) - simple to complex
     examples = [
-        ("一", "謝"),  # one to apologize
-        ("人", "働"),  # person to work
-        ("口", "話"),  # mouth to speak
-        ("森", "鑑"),  # sun/day to day of week
-        ("醸", "森"),  # tree to forest
+        ("一", "謝"),  
+        ("人", "働"),  
+        ("口", "話"),  
+        ("森", "鑑"),  
+        ("醸", "森"),  
     ]
     
     paths = []
@@ -110,23 +167,6 @@ def find_example_paths(kanji_dict):
     
     return paths, path_info, all_nodes
 
-def print_path_details(paths, path_info, kanji_dict):
-    """Print detailed information about each path"""
-    print("\n" + "="*60)
-    print("LEARNING PATH DETAILS")
-    print("="*60)
-    
-    for i, (path, info) in enumerate(zip(paths, path_info)):
-        print(f"\n--- Path {i+1}: {info['source']} → {info['target']} ---")
-        print(f"Total Weight: {info['weight']:.3f}")
-        print(f"Steps: {info['steps']}\n")
-        
-        for j, kanji in enumerate(path):
-            obj = kanji_dict[kanji]
-            print(f"  {j+1}. {kanji:2s} | Strokes: {obj.strokes:2d} | "
-                  f"Grade: {obj.grade} | JLPT: {obj.jlpt} | "
-                  f"Difficulty: {obj.difficulty:.3f}")
-        print()
 
 if __name__ == "__main__":
     kanji_metrics_dict = parse_raw_data()
@@ -139,7 +179,8 @@ if __name__ == "__main__":
     else:
         print(f"\nFound {len(paths)} paths with {len(all_nodes)} unique kanji")
     
-    
+    results = measure_runtime(kanji_metrics_dict)
+    plot_runtime(results)
     # Example 1: Find path from simple kanji to complex kanji
     #source = "験" 
     #target = "賢"  
